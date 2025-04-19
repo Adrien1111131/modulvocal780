@@ -25,6 +25,8 @@ interface TextSegment {
   emotion: string;
   analysis: TextAnalysis;
   intonationMarkers: IntonationMarker[];
+  context?: SegmentContext;
+  intonationContexts?: IntonationContext[];
 }
 
 interface TextAnalysis {
@@ -189,27 +191,119 @@ const calculateLocalIntensity = (sentence: string): number => {
   return Math.min(1.0, intensity);
 };
 
-const extractIntonationMarkers = (text: string): { text: string; markers: IntonationMarker[] } => {
+interface IntonationContext {
+  previousType?: IntonationType;
+  nextType?: IntonationType;
+  transitionDuration?: number;
+}
+
+const extractIntonationMarkers = (text: string): { text: string; markers: IntonationMarker[]; contexts: IntonationContext[] } => {
   const markers: IntonationMarker[] = [];
+  const contexts: IntonationContext[] = [];
   let cleanText = text;
 
   // Détecter les indications entre guillemets
   const quotedRegex = /"([^"]+)"|'([^']+)'/g;
+  const matches: { value: string; index: number; length: number }[] = [];
   let match;
+
+  // Première passe : collecter tous les marqueurs
   while ((match = quotedRegex.exec(text)) !== null) {
     const value = match[1] || match[2];
-    const type = determineIntonationType(value.toLowerCase());
-    markers.push({
-      type,
+    matches.push({
       value,
-      position: match.index,
-      duration: value.length
+      index: match.index,
+      length: match[0].length
     });
-    // Remplacer l'indication par un espace pour préserver la position des autres marqueurs
-    cleanText = cleanText.replace(match[0], ' '.repeat(match[0].length));
   }
 
-  return { text: cleanText, markers };
+  // Deuxième passe : analyser le contexte et créer les marqueurs
+  matches.forEach((m, i) => {
+    const type = determineIntonationType(m.value.toLowerCase());
+    const context: IntonationContext = {
+      previousType: i > 0 ? determineIntonationType(matches[i - 1].value.toLowerCase()) : undefined,
+      nextType: i < matches.length - 1 ? determineIntonationType(matches[i + 1].value.toLowerCase()) : undefined,
+      transitionDuration: calculateTransitionDuration(type, i < matches.length - 1 ? determineIntonationType(matches[i + 1].value.toLowerCase()) : undefined)
+    };
+
+    markers.push({
+      type,
+      value: m.value,
+      position: m.index,
+      duration: m.length
+    });
+    contexts.push(context);
+
+    // Remplacer le texte entre guillemets par un marqueur spécial qui sera supprimé plus tard
+    const placeholder = `__INTONATION_${i}__`;
+    cleanText = cleanText.replace(m.value, placeholder);
+  });
+
+  // Supprimer tous les guillemets et marqueurs spéciaux
+  cleanText = cleanText.replace(/"([^"]+)"|'([^']+)'/g, '');
+  cleanText = cleanText.replace(/__INTONATION_\d+__/g, '');
+  // Nettoyer les espaces multiples
+  cleanText = cleanText.replace(/\s+/g, ' ').trim();
+
+  return { text: cleanText, markers, contexts };
+};
+
+const calculateTransitionDuration = (currentType: IntonationType, nextType?: IntonationType): number => {
+  if (!nextType) return 0;
+
+  // Définir les "distances" entre les types d'intonation
+  const transitionMap: Record<IntonationType, Record<IntonationType, number>> = {
+    whisper: {
+      crescendo: 800,
+      diminuendo: 400,
+      emphasis: 300,
+      dramatic: 600,
+      soft: 200,
+      whisper: 0
+    },
+    crescendo: {
+      whisper: 800,
+      diminuendo: 600,
+      emphasis: 400,
+      dramatic: 300,
+      soft: 700,
+      crescendo: 0
+    },
+    diminuendo: {
+      whisper: 400,
+      crescendo: 600,
+      emphasis: 300,
+      dramatic: 500,
+      soft: 300,
+      diminuendo: 0
+    },
+    emphasis: {
+      whisper: 300,
+      crescendo: 400,
+      diminuendo: 300,
+      dramatic: 200,
+      soft: 300,
+      emphasis: 0
+    },
+    dramatic: {
+      whisper: 600,
+      crescendo: 300,
+      diminuendo: 500,
+      emphasis: 200,
+      soft: 600,
+      dramatic: 0
+    },
+    soft: {
+      whisper: 200,
+      crescendo: 700,
+      diminuendo: 300,
+      emphasis: 300,
+      dramatic: 600,
+      soft: 0
+    }
+  };
+
+  return transitionMap[currentType][nextType];
 };
 
 const determineIntonationType = (text: string): IntonationType => {
@@ -280,39 +374,131 @@ const addBreathingAndPauses = (text: string, emotion: string, analysis: TextAnal
     doux: 'soft'
   }[emotion] || 'medium';
 
-  // Extraire les marqueurs d'intonation
-  const { text: cleanText, markers } = extractIntonationMarkers(text);
+  // Extraire les marqueurs d'intonation avec contexte
+  const { text: cleanText, markers, contexts } = extractIntonationMarkers(text);
   text = cleanText;
 
-  // Appliquer les pauses et respirations de base
-  text = text.replace(/\.\.\./g, `<break time="800ms"/> <break strength="${breathIntensity}"/> `);
-  text = text.replace(/([.!?])/g, `$1<break time="600ms"/> <break strength="${breathIntensity}"/> `);
-  text = text.replace(/,/g, ',<break time="300ms"/> ');
-  text = text.replace(/(gémis|soupir|souffle)/gi, (match) => `<break strength="${breathIntensity}"/> ${match}`);
+  // Appliquer les pauses et respirations de base avec intensité dynamique
+  const pauseDuration = Math.min(1000, 600 + (analysis.intensity * 400));
+  text = text.replace(/\.\.\./g, `<break time="${pauseDuration}ms"/> <break strength="${breathIntensity}"/> `);
+  text = text.replace(/([.!?])/g, (match) => {
+    const duration = match === '?' ? pauseDuration * 0.8 : 
+                    match === '!' ? pauseDuration * 1.2 : 
+                    pauseDuration;
+    return `${match}<break time="${duration}ms"/> <break strength="${breathIntensity}"/> `;
+  });
+  text = text.replace(/,/g, `,<break time="${pauseDuration * 0.4}ms"/> `);
 
-  // Appliquer les variations contextuelles
+  // Appliquer les respirations avec variation d'intensité
+  const breathingWords = /(gémis|soupir|souffle)/gi;
+  text = text.replace(breathingWords, (match) => {
+    const intensity = analysis.intensity > 0.7 ? 'x-strong' :
+                     analysis.intensity > 0.4 ? 'strong' :
+                     breathIntensity;
+    return `<break strength="${intensity}"/> ${match}`;
+  });
+
+  // Appliquer les variations contextuelles avec transitions
   if (analysis.contextualMood !== 'neutral') {
     const contextPattern = contextualMoodPatterns[analysis.contextualMood];
-    text = `<prosody pitch="${contextPattern.pitch}" rate="${contextPattern.rate}">${text}</prosody>`;
+    const moodIntensity = analysis.intensity * 100;
+    text = `<prosody pitch="${contextPattern.pitch}" rate="${contextPattern.rate}" volume="+${moodIntensity}%">${text}</prosody>`;
   }
 
-  // Appliquer les marqueurs d'intonation
-  markers.forEach(marker => {
+  // Appliquer les marqueurs d'intonation avec transitions
+  markers.forEach((marker, index) => {
     const pattern = intonationPatterns[marker.type];
-    if (pattern) {
-      text = `<prosody pitch="${pattern.pitch}" rate="${pattern.rate}" volume="${pattern.volume}">${text}</prosody>`;
+    const context = contexts[index];
+    
+    if (pattern && context) {
+      let prosodyStart = '';
+      let prosodyEnd = '';
+
+      // Ajouter une transition si nécessaire
+      if (context.previousType && context.transitionDuration) {
+        const prevPattern = intonationPatterns[context.previousType];
+        prosodyStart = `<prosody pitch="${prevPattern.pitch}" rate="${prevPattern.rate}" volume="${prevPattern.volume}">`;
+        prosodyEnd = `</prosody>`;
+      }
+
+      // Créer une transition graduelle
+      if (context.transitionDuration) {
+        const transitionTime = context.transitionDuration;
+        text = `${prosodyStart}<prosody gradual="${transitionTime}ms" pitch="${pattern.pitch}" rate="${pattern.rate}" volume="${pattern.volume}">${text}${prosodyEnd}`;
+      } else {
+        text = `<prosody pitch="${pattern.pitch}" rate="${pattern.rate}" volume="${pattern.volume}">${text}</prosody>`;
+      }
     }
   });
 
-  // Ajouter des emphases sur les mots importants
+  // Ajouter des emphases sur les mots importants avec variation d'intensité
   analysis.emphasis.forEach(word => {
     const regex = new RegExp(`\\b${word}\\b`, 'g');
-    text = text.replace(regex, `<emphasis level="strong">${word}</emphasis>`);
+    const emphasisLevel = analysis.intensity > 0.7 ? 'x-strong' :
+                         analysis.intensity > 0.4 ? 'strong' :
+                         'moderate';
+    text = text.replace(regex, `<emphasis level="${emphasisLevel}">${word}</emphasis>`);
   });
 
   logger.debug('Texte avec respirations et variations:', text);
   logger.groupEnd();
   return text;
+};
+
+interface SegmentContext {
+  previousEmotion?: string;
+  nextEmotion?: string;
+  transitionDuration?: number;
+}
+
+const calculateEmotionTransitionDuration = (currentEmotion: string, nextEmotion: string): number => {
+  // Définir les durées de transition entre les émotions
+  const transitionMap: Record<string, Record<string, number>> = {
+    sensuel: {
+      excite: 600,
+      jouissance: 800,
+      murmure: 400,
+      intense: 700,
+      doux: 300
+    },
+    excite: {
+      sensuel: 600,
+      jouissance: 400,
+      murmure: 700,
+      intense: 500,
+      doux: 800
+    },
+    jouissance: {
+      sensuel: 800,
+      excite: 400,
+      murmure: 900,
+      intense: 300,
+      doux: 1000
+    },
+    murmure: {
+      sensuel: 400,
+      excite: 700,
+      jouissance: 900,
+      intense: 800,
+      doux: 300
+    },
+    intense: {
+      sensuel: 700,
+      excite: 500,
+      jouissance: 300,
+      murmure: 800,
+      doux: 900
+    },
+    doux: {
+      sensuel: 300,
+      excite: 800,
+      jouissance: 1000,
+      murmure: 300,
+      intense: 900
+    }
+  };
+
+  return transitionMap[currentEmotion]?.[nextEmotion] || 500;
 };
 
 const parseTextSegments = (text: string): TextSegment[] => {
@@ -321,27 +507,59 @@ const parseTextSegments = (text: string): TextSegment[] => {
   
   const segments: TextSegment[] = [];
   const regex = /\[(\w+)\](.*?)\[\/\1\]|([^\[\]]+)/g;
+  const matches: { emotion: string; content: string; isTagged: boolean }[] = [];
   let match;
 
+  // Première passe : collecter tous les segments
   while ((match = regex.exec(text)) !== null) {
-    logger.debug('Match trouvé:', match);
     if (match[1] && match[2]) {
-      const emotion = match[1];
-      const content = match[2].trim();
-      if (content) {
-        const analysis = analyzeText(content);
-        const { markers } = extractIntonationMarkers(content);
-        segments.push({ text: content, emotion, analysis, intonationMarkers: markers });
-      }
+      matches.push({
+        emotion: match[1],
+        content: match[2].trim(),
+        isTagged: true
+      });
     } else if (match[3]) {
       const content = match[3].trim();
       if (content) {
-        const analysis = analyzeText(content);
-        const { markers } = extractIntonationMarkers(content);
-        segments.push({ text: content, emotion: 'sensuel', analysis, intonationMarkers: markers });
+        matches.push({
+          emotion: 'sensuel',
+          content,
+          isTagged: false
+        });
       }
     }
   }
+
+  // Deuxième passe : analyser et créer les segments avec contexte
+  matches.forEach((m, i) => {
+    if (m.content) {
+      const analysis = analyzeText(m.content);
+      const { markers, contexts } = extractIntonationMarkers(m.content);
+
+      // Créer le contexte du segment
+      const segmentContext: SegmentContext = {
+        previousEmotion: i > 0 ? matches[i - 1].emotion : undefined,
+        nextEmotion: i < matches.length - 1 ? matches[i + 1].emotion : undefined,
+        transitionDuration: i < matches.length - 1 ? 
+          calculateEmotionTransitionDuration(m.emotion, matches[i + 1].emotion) : undefined
+      };
+
+      // Ajuster l'analyse en fonction du contexte
+      if (segmentContext.previousEmotion) {
+        analysis.emotionalProgression *= 1.2; // Augmenter la progression émotionnelle pour les transitions
+      }
+
+      // Créer le segment avec les informations de contexte
+      segments.push({
+        text: m.content,
+        emotion: m.emotion,
+        analysis,
+        intonationMarkers: markers,
+        context: segmentContext,
+        intonationContexts: contexts
+      });
+    }
+  });
 
   logger.debug('Segments générés:', segments);
   logger.groupEnd();
@@ -360,7 +578,7 @@ export const generateVoice = async (text: string): Promise<string> => {
     const settings = getVoiceSettings(firstSegment.emotion, firstSegment.analysis);
 
     const processedText = segments
-      .map(segment => {
+      .map((segment, index) => {
         // Appliquer les variations de base en fonction de l'émotion
         const baseRate = segment.emotion === 'murmure' ? '80%' : 
                         segment.emotion === 'intense' ? '110%' : 
@@ -372,18 +590,37 @@ export const generateVoice = async (text: string): Promise<string> => {
         // Ajouter les respirations et pauses avec l'analyse complète
         const textWithBreathing = addBreathingAndPauses(segment.text, segment.emotion, segment.analysis);
 
-        // Ajuster les paramètres en fonction de l'analyse
+        // Ajuster les paramètres en fonction de l'analyse et du contexte
         const adjustedRate = `${parseFloat(baseRate) * (1 + segment.analysis.tonalVariation * 0.2)}%`;
         const adjustedPitch = `${parseFloat(basePitch) + (segment.analysis.emotionalProgression * 15)}%`;
+        const adjustedVolume = segment.analysis.intensity > 0.7 ? '+3dB' :
+                             segment.analysis.intensity < 0.3 ? '-3dB' :
+                             '0dB';
 
-        // Construire la balise prosody avec tous les paramètres
-        return `<prosody rate="${adjustedRate}" pitch="${adjustedPitch}" volume="${
-          segment.analysis.intensity > 0.7 ? '+3dB' :
-          segment.analysis.intensity < 0.3 ? '-3dB' :
-          '0dB'
-        }">${textWithBreathing}</prosody>`;
+        // Construire le SSML avec transitions
+        let ssml = textWithBreathing;
+
+        // Ajouter les transitions entre segments
+        if (segment.context?.transitionDuration && index > 0) {
+          const prevSegment = segments[index - 1];
+          ssml = `<prosody gradual="${segment.context.transitionDuration}ms" pitch="${adjustedPitch}" rate="${adjustedRate}" volume="${adjustedVolume}">${ssml}</prosody>`;
+        } else {
+          ssml = `<prosody pitch="${adjustedPitch}" rate="${adjustedRate}" volume="${adjustedVolume}">${ssml}</prosody>`;
+        }
+
+        // Ajouter une pause dynamique entre les segments
+        const nextSegment = index < segments.length - 1 ? segments[index + 1] : null;
+        if (nextSegment) {
+          const pauseDuration = segment.context?.transitionDuration || 1000;
+          const pauseStrength = segment.analysis.intensity > 0.7 ? 'x-strong' :
+                              segment.analysis.intensity > 0.4 ? 'strong' :
+                              'medium';
+          ssml += `<break time="${pauseDuration}ms" strength="${pauseStrength}"/>`;
+        }
+
+        return ssml;
       })
-      .join('<break time="1000ms"/> ');
+      .join('');
 
     const ssmlText = `<speak>${processedText}</speak>`;
     logger.debug('Texte SSML final:', ssmlText);
