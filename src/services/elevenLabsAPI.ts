@@ -48,7 +48,7 @@ interface IntonationMarker {
   duration?: number;
 }
 
-// Utilisé dans intonationPatterns
+// Définition de l'interface pour les patterns d'intonation
 interface IntonationPattern {
   pitch: string;
   rate: string;
@@ -69,7 +69,8 @@ const emotionKeywords = {
   doux: ['tendre', 'doux', 'délicat', 'léger', 'suave', 'douceur']
 };
 
-const intonationPatterns = {
+// Définition des patterns d'intonation
+const intonationPatterns: Record<string, IntonationPattern> = {
   crescendo: { pitch: '+20%', rate: '110%', volume: '+3dB' },
   diminuendo: { pitch: '-10%', rate: '90%', volume: '-3dB' },
   whisper: { pitch: '-20%', rate: '80%', volume: '-6dB' },
@@ -219,10 +220,10 @@ const extractIntonationMarkers = (text: string): { text: string; markers: Intona
   return { text: cleanText, markers, contexts };
 };
 
-// Cette fonction n'est plus utilisée mais conservée pour référence future
+// Fonction conservée pour référence mais non utilisée
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _calculateTransitionDuration = (currentType: IntonationType, nextType?: IntonationType): number => {
-  if (!nextType) return 0;
+const _calculateTransitionDuration = (_currentType: IntonationType, _nextType?: IntonationType): number => {
+  if (!_nextType) return 0;
 
   // Définir les "distances" entre les types d'intonation
   const transitionMap: Record<IntonationType, Record<IntonationType, number>> = {
@@ -276,17 +277,17 @@ const _calculateTransitionDuration = (currentType: IntonationType, nextType?: In
     }
   };
 
-  return transitionMap[currentType][nextType];
+  return transitionMap[_currentType][_nextType];
 };
 
-// Cette fonction n'est plus utilisée mais conservée pour référence future
+// Fonction conservée pour référence mais non utilisée
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _determineIntonationType = (text: string): IntonationType => {
-  if (text.includes('murmur') || text.includes('douc')) return 'whisper';
-  if (text.includes('fort') || text.includes('intens')) return 'crescendo';
-  if (text.includes('baiss') || text.includes('diminue')) return 'diminuendo';
-  if (text.includes('dramatique')) return 'dramatic';
-  if (text.includes('doux') || text.includes('tendre')) return 'soft';
+const _determineIntonationType = (_text: string): IntonationType => {
+  if (_text.includes('murmur') || _text.includes('douc')) return 'whisper';
+  if (_text.includes('fort') || _text.includes('intens')) return 'crescendo';
+  if (_text.includes('baiss') || _text.includes('diminue')) return 'diminuendo';
+  if (_text.includes('dramatique')) return 'dramatic';
+  if (_text.includes('doux') || _text.includes('tendre')) return 'soft';
   return 'emphasis';
 };
 
