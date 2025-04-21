@@ -202,46 +202,16 @@ const extractIntonationMarkers = (text: string): { text: string; markers: Intona
   const contexts: IntonationContext[] = [];
   let cleanText = text;
 
-  // Détecter les indications entre guillemets
-  const quotedRegex = /"([^"]+)"|'([^']+)'/g;
-  const matches: { value: string; index: number; length: number }[] = [];
-  let match;
-
-  // Première passe : collecter tous les marqueurs
-  while ((match = quotedRegex.exec(text)) !== null) {
-    const value = match[1] || match[2];
-    matches.push({
-      value,
-      index: match.index,
-      length: match[0].length
-    });
-  }
-
-  // Deuxième passe : analyser le contexte et créer les marqueurs
-  matches.forEach((m, i) => {
-    const type = determineIntonationType(m.value.toLowerCase());
-    const context: IntonationContext = {
-      previousType: i > 0 ? determineIntonationType(matches[i - 1].value.toLowerCase()) : undefined,
-      nextType: i < matches.length - 1 ? determineIntonationType(matches[i + 1].value.toLowerCase()) : undefined,
-      transitionDuration: calculateTransitionDuration(type, i < matches.length - 1 ? determineIntonationType(matches[i + 1].value.toLowerCase()) : undefined)
-    };
-
-    markers.push({
-      type,
-      value: m.value,
-      position: m.index,
-      duration: m.length
-    });
-    contexts.push(context);
-
-    // Remplacer le texte entre guillemets par un marqueur spécial qui sera supprimé plus tard
-    const placeholder = `__INTONATION_${i}__`;
-    cleanText = cleanText.replace(m.value, placeholder);
-  });
-
-  // Supprimer tous les guillemets et marqueurs spéciaux
-  cleanText = cleanText.replace(/"([^"]+)"|'([^']+)'/g, '');
-  cleanText = cleanText.replace(/__INTONATION_\d+__/g, '');
+  // Ne plus traiter les guillemets comme des instructions, mais traiter les pauses spéciales
+  const pauseRegex = /\(\.\.\.\)/g;
+  const longPauseRegex = /\(\.\.\.\.\.\)/g;
+  const semiColonRegex = /;/g;
+  
+  // Remplacer les pauses par des marqueurs temporaires
+  cleanText = cleanText.replace(longPauseRegex, "__LONG_PAUSE__");
+  cleanText = cleanText.replace(pauseRegex, "__PAUSE__");
+  cleanText = cleanText.replace(semiColonRegex, "__SEMI__");
+  
   // Nettoyer les espaces multiples
   cleanText = cleanText.replace(/\s+/g, ' ').trim();
 
@@ -320,38 +290,40 @@ const getVoiceSettings = (emotion: string, analysis: TextAnalysis): VoiceSetting
   logger.debug('Émotion:', emotion);
   logger.debug('Analyse:', analysis);
   
+  // Paramètres ajustés pour plus de sensualité et de profondeur
   const baseSettings: Record<string, VoiceSettings> = {
     sensuel: {
-      stability: 0.5,
-      similarity_boost: 0.85
+      stability: 0.7,  // Augmenté pour plus de constance
+      similarity_boost: 0.9  // Augmenté pour plus d'expressivité
     },
     excite: {
-      stability: 0.35,
+      stability: 0.4,  // Légèrement augmenté
       similarity_boost: 0.95
     },
     jouissance: {
-      stability: 0.25,
+      stability: 0.3,  // Légèrement augmenté
       similarity_boost: 1.0
     },
     murmure: {
-      stability: 0.95,
-      similarity_boost: 0.7
+      stability: 0.85, // Légèrement réduit pour plus de variation
+      similarity_boost: 0.8  // Augmenté pour plus d'expressivité
     },
     intense: {
-      stability: 0.3,
-      similarity_boost: 0.9
+      stability: 0.4,  // Légèrement augmenté
+      similarity_boost: 0.95 // Augmenté pour plus d'expressivité
     },
     doux: {
-      stability: 0.8,
-      similarity_boost: 0.75
+      stability: 0.75, // Légèrement réduit
+      similarity_boost: 0.85 // Augmenté pour plus d'expressivité
     }
   };
 
   const settings = baseSettings[emotion] || baseSettings.sensuel;
   const adjustedSettings = {
     ...settings,
-    stability: Math.max(0.2, Math.min(0.95, settings.stability * (1 - analysis.intensity * 0.4))),
-    similarity_boost: Math.max(0.5, Math.min(1.0, settings.similarity_boost + analysis.emotionalProgression * 0.2))
+    // Ajustements moins agressifs pour préserver la sensualité
+    stability: Math.max(0.3, Math.min(0.9, settings.stability * (1 - analysis.intensity * 0.3))),
+    similarity_boost: Math.max(0.6, Math.min(1.0, settings.similarity_boost + analysis.emotionalProgression * 0.15))
   };
 
   logger.debug('Paramètres ajustés:', adjustedSettings);
@@ -365,44 +337,57 @@ const addBreathingAndPauses = (text: string, emotion: string, analysis: TextAnal
   logger.debug('Émotion:', emotion);
   logger.debug('Analyse:', analysis);
   
+  // Intensité de respiration plus forte pour plus de sensualité
   const breathIntensity = {
-    sensuel: 'soft',
-    excite: 'medium',
-    jouissance: 'heavy',
-    murmure: 'soft',
-    intense: 'heavy',
-    doux: 'soft'
+    sensuel: 'medium',
+    excite: 'strong',
+    jouissance: 'x-strong',
+    murmure: 'medium',
+    intense: 'strong',
+    doux: 'medium'
   }[emotion] || 'medium';
 
   // Extraire les marqueurs d'intonation avec contexte
   const { text: cleanText, markers, contexts } = extractIntonationMarkers(text);
   text = cleanText;
 
-  // Appliquer les pauses et respirations de base avec intensité dynamique
-  const pauseDuration = Math.min(1000, 600 + (analysis.intensity * 400));
+  // Pauses plus longues pour un rythme plus sensuel
+  const pauseDuration = Math.min(1200, 800 + (analysis.intensity * 500));
+  
+  // Remplacer les marqueurs de pause spéciaux
+  text = text.replace(/__LONG_PAUSE__/g, `<break time="${pauseDuration * 1.5}ms"/> <break strength="x-strong"/> `);
+  text = text.replace(/__PAUSE__/g, `<break time="${pauseDuration}ms"/> <break strength="${breathIntensity}"/> `);
+  text = text.replace(/__SEMI__/g, `<break time="${pauseDuration * 0.3}ms"/> `);
+  
+  // Pauses standard
   text = text.replace(/\.\.\./g, `<break time="${pauseDuration}ms"/> <break strength="${breathIntensity}"/> `);
   text = text.replace(/([.!?])/g, (match) => {
-    const duration = match === '?' ? pauseDuration * 0.8 : 
-                    match === '!' ? pauseDuration * 1.2 : 
+    const duration = match === '?' ? pauseDuration * 0.9 : 
+                    match === '!' ? pauseDuration * 1.3 : 
                     pauseDuration;
     return `${match}<break time="${duration}ms"/> <break strength="${breathIntensity}"/> `;
   });
-  text = text.replace(/,/g, `,<break time="${pauseDuration * 0.4}ms"/> `);
+  text = text.replace(/,/g, `,<break time="${pauseDuration * 0.5}ms"/> `);
 
-  // Appliquer les respirations avec variation d'intensité
-  const breathingWords = /(gémis|soupir|souffle)/gi;
+  // Respirations plus profondes pour les mots sensuels
+  const breathingWords = /(gémis|soupir|souffle|caresse|frisson|désir|plaisir|extase)/gi;
   text = text.replace(breathingWords, (match) => {
-    const intensity = analysis.intensity > 0.7 ? 'x-strong' :
-                     analysis.intensity > 0.4 ? 'strong' :
+    const intensity = analysis.intensity > 0.6 ? 'x-strong' :
+                     analysis.intensity > 0.3 ? 'strong' :
                      breathIntensity;
     return `<break strength="${intensity}"/> ${match}`;
   });
 
-  // Appliquer les variations contextuelles avec transitions
+  // Variations contextuelles plus prononcées avec débit ralenti
   if (analysis.contextualMood !== 'neutral') {
     const contextPattern = contextualMoodPatterns[analysis.contextualMood];
-    const moodIntensity = analysis.intensity * 100;
-    text = `<prosody pitch="${contextPattern.pitch}" rate="${contextPattern.rate}" volume="+${moodIntensity}%">${text}</prosody>`;
+    const moodIntensity = analysis.intensity * 120; // Intensité augmentée
+    // Ralentir le débit global pour plus de sensualité
+    const baseRate = "85%";
+    text = `<prosody pitch="${contextPattern.pitch}" rate="${baseRate}" volume="+${moodIntensity}%">${text}</prosody>`;
+  } else {
+    // Même sans contexte spécifique, ralentir le débit
+    text = `<prosody rate="85%" pitch="-5%">${text}</prosody>`;
   }
 
   // Appliquer les marqueurs d'intonation avec transitions
@@ -579,23 +564,27 @@ export const generateVoice = async (text: string): Promise<string> => {
 
     const processedText = segments
       .map((segment, index) => {
-        // Appliquer les variations de base en fonction de l'émotion
-        const baseRate = segment.emotion === 'murmure' ? '80%' : 
-                        segment.emotion === 'intense' ? '110%' : 
-                        '100%';
-        const basePitch = segment.emotion === 'murmure' ? '-20%' : 
-                         segment.emotion === 'intense' ? '+20%' : 
-                         '0%';
+        // Appliquer les variations de base en fonction de l'émotion avec débit ralenti
+        const baseRate = segment.emotion === 'murmure' ? '75%' : // Ralenti davantage
+                        segment.emotion === 'intense' ? '95%' :  // Ralenti pour plus de profondeur
+                        '85%';                                   // Débit de base ralenti
+        
+        // Ajuster la hauteur pour plus de profondeur
+        const basePitch = segment.emotion === 'murmure' ? '-25%' : // Plus grave
+                         segment.emotion === 'intense' ? '+15%' :  // Moins aigu
+                         '-5%';                                    // Légèrement plus grave par défaut
 
         // Ajouter les respirations et pauses avec l'analyse complète
         const textWithBreathing = addBreathingAndPauses(segment.text, segment.emotion, segment.analysis);
 
         // Ajuster les paramètres en fonction de l'analyse et du contexte
-        const adjustedRate = `${parseFloat(baseRate) * (1 + segment.analysis.tonalVariation * 0.2)}%`;
-        const adjustedPitch = `${parseFloat(basePitch) + (segment.analysis.emotionalProgression * 15)}%`;
-        const adjustedVolume = segment.analysis.intensity > 0.7 ? '+3dB' :
-                             segment.analysis.intensity < 0.3 ? '-3dB' :
-                             '0dB';
+        // Variations moins importantes pour maintenir la cohérence
+        const adjustedRate = `${parseFloat(baseRate) * (1 + segment.analysis.tonalVariation * 0.15)}%`;
+        const adjustedPitch = `${parseFloat(basePitch) + (segment.analysis.emotionalProgression * 10)}%`;
+        // Volume augmenté pour plus de présence
+        const adjustedVolume = segment.analysis.intensity > 0.7 ? '+4dB' :
+                             segment.analysis.intensity < 0.3 ? '-2dB' :
+                             '+1dB';
 
         // Construire le SSML avec transitions
         let ssml = textWithBreathing;
