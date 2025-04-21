@@ -80,11 +80,11 @@ const intonationPatterns: Record<string, IntonationPattern> = {
 };
 
 const contextualMoodPatterns: Record<Exclude<ContextualMoodType, 'neutral'>, ContextualMoodPattern> = {
-  anticipation: { pitch: '+5%', rate: '95%' },
-  tension: { pitch: '+10%', rate: '105%' },
-  relaxation: { pitch: '-5%', rate: '90%' },
-  intimacy: { pitch: '-10%', rate: '85%' },
-  passion: { pitch: '+15%', rate: '110%' }
+  anticipation: { pitch: '+5%', rate: '75%' },   // Ralenti pour plus de tension
+  tension: { pitch: '+10%', rate: '85%' },       // Ralenti pour plus d'impact
+  relaxation: { pitch: '-5%', rate: '70%' },     // Très lent pour la détente
+  intimacy: { pitch: '-10%', rate: '65%' },      // Extrêmement lent pour l'intimité
+  passion: { pitch: '+15%', rate: '80%' }        // Ralenti pour plus de profondeur
 };
 
 const analyzeText = (text: string): TextAnalysis => {
@@ -388,12 +388,12 @@ const addBreathingAndPauses = (text: string, emotion: string, analysis: TextAnal
   if (analysis.contextualMood !== 'neutral') {
     const contextPattern = contextualMoodPatterns[analysis.contextualMood];
     const moodIntensity = analysis.intensity * 120; // Intensité augmentée
-    // Ralentir le débit global pour plus de sensualité
-    const baseRate = "85%";
+    // Ralentir considérablement le débit global pour plus de sensualité
+    const baseRate = "70%";
     text = `<prosody pitch="${contextPattern.pitch}" rate="${baseRate}" volume="+${moodIntensity}%">${text}</prosody>`;
   } else {
-    // Même sans contexte spécifique, ralentir le débit
-    text = `<prosody rate="85%" pitch="-5%">${text}</prosody>`;
+    // Même sans contexte spécifique, ralentir considérablement le débit
+    text = `<prosody rate="70%" pitch="-5%">${text}</prosody>`;
   }
 
   // Appliquer les marqueurs d'intonation avec transitions
@@ -571,9 +571,9 @@ export const generateVoice = async (text: string): Promise<string> => {
     const processedText = segments
       .map((segment, index) => {
         // Appliquer les variations de base en fonction de l'émotion avec débit ralenti
-        const baseRate = segment.emotion === 'murmure' ? '75%' : // Ralenti davantage
-                        segment.emotion === 'intense' ? '95%' :  // Ralenti pour plus de profondeur
-                        '85%';                                   // Débit de base ralenti
+        const baseRate = segment.emotion === 'murmure' ? '65%' : // Extrêmement ralenti
+                        segment.emotion === 'intense' ? '75%' :  // Très ralenti
+                        '70%';                                   // Débit de base très ralenti
         
         // Ajuster la hauteur pour plus de profondeur
         const basePitch = segment.emotion === 'murmure' ? '-25%' : // Plus grave
