@@ -48,6 +48,7 @@ interface IntonationMarker {
   duration?: number;
 }
 
+// Utilisé dans intonationPatterns
 interface IntonationPattern {
   pitch: string;
   rate: string;
@@ -218,7 +219,9 @@ const extractIntonationMarkers = (text: string): { text: string; markers: Intona
   return { text: cleanText, markers, contexts };
 };
 
-const calculateTransitionDuration = (currentType: IntonationType, nextType?: IntonationType): number => {
+// Cette fonction n'est plus utilisée mais conservée pour référence future
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _calculateTransitionDuration = (currentType: IntonationType, nextType?: IntonationType): number => {
   if (!nextType) return 0;
 
   // Définir les "distances" entre les types d'intonation
@@ -276,7 +279,9 @@ const calculateTransitionDuration = (currentType: IntonationType, nextType?: Int
   return transitionMap[currentType][nextType];
 };
 
-const determineIntonationType = (text: string): IntonationType => {
+// Cette fonction n'est plus utilisée mais conservée pour référence future
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _determineIntonationType = (text: string): IntonationType => {
   if (text.includes('murmur') || text.includes('douc')) return 'whisper';
   if (text.includes('fort') || text.includes('intens')) return 'crescendo';
   if (text.includes('baiss') || text.includes('diminue')) return 'diminuendo';
@@ -591,7 +596,7 @@ export const generateVoice = async (text: string): Promise<string> => {
 
         // Ajouter les transitions entre segments
         if (segment.context?.transitionDuration && index > 0) {
-          const prevSegment = segments[index - 1];
+          // Utiliser la durée de transition du contexte
           ssml = `<prosody gradual="${segment.context.transitionDuration}ms" pitch="${adjustedPitch}" rate="${adjustedRate}" volume="${adjustedVolume}">${ssml}</prosody>`;
         } else {
           ssml = `<prosody pitch="${adjustedPitch}" rate="${adjustedRate}" volume="${adjustedVolume}">${ssml}</prosody>`;
