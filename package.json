@@ -2,7 +2,6 @@
   "name": "vite-react-elevenlabs-app",
   "version": "1.0.0",
   "description": "A React application that utilizes the Eleven Labs API to add emotions to voice output.",
-  "homepage": "https://adrien1111131.github.io/modulvocal7",
   "type": "module",
   "scripts": {
     "dev": "vite",
