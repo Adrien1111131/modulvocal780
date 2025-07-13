@@ -1,8 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { audioMixerService } from '../services/audioMixerService';
 import { logger } from '../config/development';
-import ImageDisplay from './ImageDisplay';
-import { generateImageFromText } from '../services/grokImageService';
+import RandomImageDisplay from './RandomImageDisplay';
 
 interface VoicePlayerProps {
   audioUrl: string | null;
@@ -22,10 +21,6 @@ const VoicePlayer: React.FC<VoicePlayerProps> = ({
   const [volume, setVolume] = useState(0.8);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [imagePrompt, setImagePrompt] = useState<string>('');
-  const [isGeneratingImage, setIsGeneratingImage] = useState<boolean>(false);
-  const [imageError, setImageError] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
@@ -129,45 +124,6 @@ const VoicePlayer: React.FC<VoicePlayerProps> = ({
     audioMixerService.setMasterVolume(volume);
   }, [volume]);
   
-  // Fonction pour régénérer l'image
-  const handleRegenerateImage = () => {
-    setImageUrl(null);
-    setImagePrompt('');
-    setImageError(undefined);
-    setIsGeneratingImage(false); // Ceci déclenchera la régénération via l'useEffect
-  };
-  
-  // Générer l'image lorsque l'audio est disponible
-  useEffect(() => {
-    if (audioUrl && originalText && !imageUrl && !isGeneratingImage) {
-      const generateImage = async () => {
-        try {
-          setIsGeneratingImage(true);
-          console.log('Génération d\'image pour le texte:', originalText.substring(0, 50) + '...');
-          
-          // Utiliser le texte original directement
-          const result = await generateImageFromText(originalText);
-          setImageUrl(result.imageUrl);
-          
-          // Utiliser le texte original comme prompt au lieu du prompt généré
-          // Limiter la longueur pour l'affichage
-          const displayText = originalText.length > 150 ? 
-            originalText.substring(0, 150) + '...' : 
-            originalText;
-          
-          setImagePrompt(displayText);
-          setImageError(result.error); // Stocker l'erreur éventuelle
-        } catch (error) {
-          console.error('Erreur lors de la génération de l\'image:', error);
-          setImageError(error instanceof Error ? error.message : 'Erreur inconnue');
-        } finally {
-          setIsGeneratingImage(false);
-        }
-      };
-      
-      generateImage();
-    }
-  }, [audioUrl, originalText, imageUrl, isGeneratingImage]);
 
   const handlePlay = () => {
     if (audioRef.current) {
@@ -235,22 +191,15 @@ const VoicePlayer: React.FC<VoicePlayerProps> = ({
             style={{ width: '100%', marginBottom: '1rem' }}
           />
           
-          {/* Section d'image améliorée */}
+          {/* Section d'image avec système aléatoire */}
           <div className="player-image-section">
-            <h3 className="image-section-title">Illustration générée</h3>
-            {isGeneratingImage ? (
-              <div className="image-loading">
-                <div className="spinner"></div>
-                <p>Génération de l'illustration en cours...</p>
-              </div>
-            ) : (
-              <ImageDisplay 
-                imageUrl={imageUrl} 
-                prompt={imagePrompt} 
-                error={imageError}
-                onRegenerateClick={handleRegenerateImage}
-              />
-            )}
+            <h3 className="image-section-title">Illustration</h3>
+            <RandomImageDisplay 
+              isPlaying={isPlaying}
+              onImageChange={(imageUrl: string) => {
+                console.log('Image changée:', imageUrl);
+              }}
+            />
           </div>
         </div>
       ) : (
